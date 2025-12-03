@@ -18,6 +18,7 @@ using namespace sensesp;
 #define DIRECTION_PIN 26    // GPIO pin for direction (HIGH = chain out, LOW = chain in)
 #define WINCH_UP_PIN 27     // GPIO pin to control winch UP (chain in)
 #define WINCH_DOWN_PIN 14   // GPIO pin to control winch DOWN (chain out)
+#define ANCHOR_HOME_PIN 33  // GPIO pin for anchor home position sensor (LOW = anchor home)
 
 // Pulse counter variables
 volatile long pulse_count = 0;  // Changed to signed long for up/down counting
@@ -50,6 +51,12 @@ void stopWinch() {
 }
 
 void setWinchUp() {
+    // Check if anchor is already home - don't allow retrieval if home
+    if (digitalRead(ANCHOR_HOME_PIN) == LOW) {
+        debugD("Anchor already home - cannot retrieve further");
+        stopWinch();
+        return;
+    }
     digitalWrite(WINCH_DOWN_PIN, LOW);
     digitalWrite(WINCH_UP_PIN, HIGH);
     winch_active = true;
@@ -82,6 +89,25 @@ public:
         // Read the pulse count and convert to meters
         float meters = pulse_count * config_meters_per_pulse;
         this->emit(meters);
+        
+        // Check if anchor reached home position while retrieving
+        if (winch_active && digitalRead(WINCH_UP_PIN) == HIGH) {
+            if (digitalRead(ANCHOR_HOME_PIN) == LOW) {
+                stopWinch();
+                pulse_count = 0;  // Reset counter when anchor reaches home
+                debugD("Anchor home position reached - stopped and reset counter");
+                return;
+            }
+        }
+        
+        // Also check if anchor is home while not winching (manual operation or startup)
+        static bool was_home = false;
+        bool is_home = (digitalRead(ANCHOR_HOME_PIN) == LOW);
+        if (is_home && !was_home) {
+            pulse_count = 0;  // Reset counter when anchor first detected at home
+            debugD("Anchor detected at home position - counter reset");
+        }
+        was_home = is_home;
         
         // Check if we need to control the winch to reach target length
         if (automatic_mode_enabled && target_rode_length >= 0 && winch_active) {
@@ -133,6 +159,9 @@ void setup()
     pinMode(PULSE_INPUT_PIN, INPUT_PULLUP);
     pinMode(DIRECTION_PIN, INPUT_PULLUP);
     attachInterrupt(digitalPinToInterrupt(PULSE_INPUT_PIN), pulseISR, RISING);
+
+    // Configure anchor home position sensor
+    pinMode(ANCHOR_HOME_PIN, INPUT_PULLUP);
 
     // Configure winch control output pins
     pinMode(WINCH_UP_PIN, OUTPUT);
@@ -204,8 +233,10 @@ void setup()
         }
         return target_length;
     }));
+
     debugD("Anchor chain counter initialized - Pulse: GPIO %d, Direction: GPIO %d", PULSE_INPUT_PIN, DIRECTION_PIN);
     debugD("Winch control initialized - UP: GPIO %d, DOWN: GPIO %d", WINCH_UP_PIN, WINCH_DOWN_PIN);
+    debugD("Anchor home sensor: GPIO %d", ANCHOR_HOME_PIN);
 }
 
 void loop()

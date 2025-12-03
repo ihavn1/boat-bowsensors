@@ -95,6 +95,10 @@ Disabling automatic mode immediately stops the windlass.
 
 This resets the counter to zero, stops the windlass, and clears any active target.
 
+**Note:** The counter also automatically resets when the anchor reaches the home position (detected by the home sensor on GPIO 33).
+
+**Note:** The counter also automatically resets when the anchor reaches the home position (detected by the home sensor).
+
 ## Manual Operation
 
 When operating the windlass manually (using physical switches), the counter continues to measure and report the chain length accurately. The automatic control will not interfere when automatic mode is disabled.
@@ -137,6 +141,14 @@ curl -X PUT http://your-signalk-server:3000/signalk/v1/api/vessels/self/navigati
 ```
 
 ## Configuration
+
+### Hardware Setup
+- **Pulse Input:** GPIO 25 - Connect chain counter pulse sensor
+- **Direction Input:** GPIO 26 - HIGH = chain out, LOW = chain in
+- **Anchor Home Sensor:** GPIO 33 - Detects when anchor is fully retrieved (active LOW)
+- **Winch UP Output:** GPIO 27 - Activates windlass to retrieve chain
+- **Winch DOWN Output:** GPIO 14 - Activates windlass to deploy chain
+
 ### Calibration
 The meters per pulse conversion factor (default: 0.1) can be configured via the SensESP web interface at:
 ```
@@ -144,34 +156,36 @@ http://bow-sensors.local/
 ```
 
 Look for the "Meters per Pulse" configuration item to adjust the value based on your windlass gypsy diameter and pulse sensor.
-### Calibration
 ## Safety Notes
 
 1. **Always test in safe conditions** before relying on automatic control
 2. **Keep manual override accessible** - the system respects manual operation when automatic mode is disabled
 3. **Monitor the process** - automatic control stops when target is reached (±0.2m tolerance)
 4. **Emergency stop** - send `automaticMode: false` to stop automatic operation immediately
-5. **Reset after anchor retrieval** - reset the counter when the anchor is fully retrieved
+5. **Automatic home detection** - the system automatically stops and resets when anchor reaches home position
 6. **Enable automatic mode only when ready** - the windlass will not move automatically unless explicitly enabled
-## Safety Notes
-
-1. **Always test in safe conditions** before relying on automatic control
-2. **Keep manual override accessible** - the system respects manual operation
-3. **Monitor the process** - automatic control stops when target is reached (±0.2m tolerance)
-4. **Emergency stop** - send `targetRode: -1` to stop automatic operation immediately
-5. **Reset after anchor retrieval** - reset the counter when the anchor is fully retrieved
+7. **Home sensor prevents over-retrieval** - windlass cannot retrieve past the home position, preventing damage
 
 ## Troubleshooting
 
 ### Counter not incrementing
 - Check pulse sensor connection on GPIO 25
 - Verify direction sensor on GPIO 26 shows correct state
+
 ### Windlass not responding to automatic control
 - **Verify automatic mode is enabled** (`automaticMode: true`)
 - Check that a valid target was set (`targetRode >= 0`)
 - Verify GPIO 27 (UP) and GPIO 14 (DOWN) connections
-- Ensure no manual control is active(`targetRode >= 0`)
 - Ensure no manual control is active
+
+### Windlass won't retrieve (UP)
+- Check if anchor home sensor (GPIO 33) is activated - system prevents retrieval when anchor is already home
+- Verify home sensor wiring and function
+
+### Counter doesn't reset at home position
+- Verify home sensor connection on GPIO 33
+- Sensor should be LOW when anchor is in home position, HIGH otherwise
+- Check sensor is triggering correctly (use debug output)
 
 ### Wrong direction
 - Check direction sensor polarity on GPIO 26
