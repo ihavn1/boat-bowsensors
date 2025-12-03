@@ -26,6 +26,7 @@ unsigned long last_pulse_count = 0;
 // Winch control variables
 float target_rode_length = -1.0;  // Target length in meters (-1 = no target)
 bool winch_active = false;
+bool automatic_mode_enabled = false;  // Enable/disable automatic control
 
 // Interrupt handler for pulse counting with direction
 void IRAM_ATTR pulseISR() {
@@ -83,13 +84,12 @@ public:
         this->emit(meters);
         
         // Check if we need to control the winch to reach target length
-        if (target_rode_length >= 0 && winch_active) {
+        if (automatic_mode_enabled && target_rode_length >= 0 && winch_active) {
             float tolerance = config_meters_per_pulse * 2.0;  // 2 pulse tolerance
             
             if (fabs(meters - target_rode_length) <= tolerance) {
                 // Target reached
                 stopWinch();
-                target_rode_length = -1.0;  // Clear target
                 debugD("Target rode length reached: %.2f m", meters);
             } else if (meters < target_rode_length) {
                 // Need more chain out
@@ -167,16 +167,32 @@ void setup()
     }));
 
     // Add SignalK listener for target rode length
+    // Add SignalK listener to enable/disable automatic mode
+    auto* auto_mode_listener = new BoolSKListener("navigation.anchor.automaticMode");
+    
+    auto_mode_listener->connect_to(new LambdaTransform<bool, bool>([](bool enable) {
+        automatic_mode_enabled = enable;
+        if (enable) {
+            debugD("Automatic windlass control ENABLED");
+        } else {
+            debugD("Automatic windlass control DISABLED");
+            stopWinch();  // Stop winch when disabling automatic mode
+        }
+        return enable;
+    }));
+
+    // Add SignalK listener for target rode length
     auto* target_listener = new FloatSKListener("navigation.anchor.targetRode");
     
-    // When target rode length is received, start winch control
+    // When target rode length is received, save it and start if automatic mode is enabled
     target_listener->connect_to(new LambdaTransform<float, float>([pulse_counter](float target_length) {
-        if (target_length >= 0) {
-            target_rode_length = target_length;
-            float current_length = pulse_count * pulse_counter->get_meters_per_pulse();
-            
-            debugD("Target rode length set: %.2f m (current: %.2f m)", target_length, current_length);
-            
+        target_rode_length = target_length;
+        float current_length = pulse_count * pulse_counter->get_meters_per_pulse();
+        
+        debugD("Target rode length set: %.2f m (current: %.2f m)", target_length, current_length);
+        
+        // Only start winch if automatic mode is enabled
+        if (automatic_mode_enabled && target_length >= 0) {
             // Immediately start winch in correct direction
             if (current_length < target_length) {
                 setWinchDown();  // Need more chain out
@@ -185,14 +201,9 @@ void setup()
             } else {
                 debugD("Already at target length");
             }
-        } else {
-            // Negative value stops the winch
-            stopWinch();
-            target_rode_length = -1.0;
         }
         return target_length;
     }));
-
     debugD("Anchor chain counter initialized - Pulse: GPIO %d, Direction: GPIO %d", PULSE_INPUT_PIN, DIRECTION_PIN);
     debugD("Winch control initialized - UP: GPIO %d, DOWN: GPIO %d", WINCH_UP_PIN, WINCH_DOWN_PIN);
 }
