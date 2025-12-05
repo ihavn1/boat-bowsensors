@@ -234,14 +234,15 @@ void setup()
     }))->connect_to(manual_down_output);
 
     // Add SignalK value listener to enable/disable automatic mode - listens on command path
-    // Using FloatSKListener instead of BoolSKListener due to parsing issues with boolean values
-    // Send 1 for true/enable, 0 for false/disable from Node-RED
-    auto* auto_mode_output = new SKOutputBool("navigation.anchor.automaticModeStatus", "/automatic_mode_status/sk_path");
+    // Using FloatSKListener with numeric values due to BoolSKListener bug (always returns true)
+    // Send numeric values from Node-RED: any value > 0.5 = enable, <= 0.5 = disable
+    debugD("Creating automatic mode listener on path: navigation.anchor.automaticModeCommand");
+    auto* auto_mode_output = new SKOutputFloat("navigation.anchor.automaticModeStatus", "/automatic_mode_status/sk_path");
     auto* auto_mode_listener = new FloatSKListener("navigation.anchor.automaticModeCommand");
     
-    auto_mode_listener->connect_to(new LambdaTransform<float, bool>([](float value) {
-        bool enable = (value != 0.0);  // Treat 0 as false, any non-zero as true
-        debugD("Received automatic mode command: %.1f -> %s", value, enable ? "TRUE" : "FALSE");
+    auto_mode_listener->connect_to(new LambdaTransform<float, float>([](float value) {
+        bool enable = (value > 0.5);  // Values > 0.5 are true, <= 0.5 are false
+        debugD("Received automatic mode: %.2f -> %s", value, enable ? "ENABLED" : "DISABLED");
         automatic_mode_enabled = enable;
         if (enable) {
             debugD("Automatic windlass control ENABLED");
@@ -249,7 +250,7 @@ void setup()
             debugD("Automatic windlass control DISABLED");
             stopWinch();  // Stop winch when disabling automatic mode
         }
-        return enable;
+        return value;  // Return the float value for status output
     }))->connect_to(auto_mode_output);
 
     // Add SignalK value listener for target rode length - listens on command path
