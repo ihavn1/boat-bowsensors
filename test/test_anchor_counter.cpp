@@ -258,6 +258,34 @@ void test_automatic_mode_blocks_manual_control(void) {
 }
 
 // =============================================================================
+// TEST: Arm and Fire - Target Armed First
+// =============================================================================
+void test_arm_target_then_fire(void) {
+    test_automatic_mode_enabled = false;  // Start in manual mode
+    test_pulse_count = 0;  // Current: 0m
+    test_target_rode_length = -1.0;  // No target
+    mock_gpio_states[ANCHOR_HOME_PIN] = true;  // Not home
+    
+    // Step 1: ARM - Set target while in manual mode
+    test_target_rode_length = 10.0;
+    TEST_ASSERT_FALSE(test_winch_active);  // Winch should not start yet
+    
+    // Step 2: FIRE - Enable automatic mode
+    test_automatic_mode_enabled = true;
+    float current_length = test_pulse_count * test_config_meters_per_pulse;
+    
+    // System should start deploying when auto mode enabled
+    if (test_automatic_mode_enabled && test_target_rode_length >= 0) {
+        if (current_length < test_target_rode_length) {
+            test_setWinchDown();
+        }
+    }
+    
+    TEST_ASSERT_TRUE(test_winch_active);
+    TEST_ASSERT_TRUE(mock_gpio_states[WINCH_DOWN_PIN]);
+}
+
+// =============================================================================
 // TEST: Automatic Target Deploy
 // =============================================================================
 void test_automatic_target_deploy(void) {
@@ -304,9 +332,9 @@ void test_automatic_target_retrieve(void) {
 }
 
 // =============================================================================
-// TEST: Automatic Target Reached
+// TEST: Automatic Stops and Disables at Target
 // =============================================================================
-void test_automatic_stops_at_target(void) {
+void test_automatic_stops_and_disables_at_target(void) {
     test_automatic_mode_enabled = true;
     test_pulse_count = 100;  // Current: 10m
     test_target_rode_length = 10.0;  // Target: 10m
@@ -316,14 +344,16 @@ void test_automatic_stops_at_target(void) {
     float current_length = test_pulse_count * test_config_meters_per_pulse;
     float tolerance = test_config_meters_per_pulse * 2.0;
     
-    // Check if target reached
+    // Check if target reached - should stop and disable automatic mode
     if (test_automatic_mode_enabled && test_target_rode_length >= 0 && test_winch_active) {
         if (fabs(current_length - test_target_rode_length) <= tolerance) {
             test_stopWinch();
+            test_automatic_mode_enabled = false;  // Auto-disable on completion
         }
     }
     
     TEST_ASSERT_FALSE(test_winch_active);
+    TEST_ASSERT_FALSE(test_automatic_mode_enabled);  // Should return to manual mode
 }
 
 // =============================================================================
@@ -383,9 +413,10 @@ void setup() {
     RUN_TEST(test_automatic_mode_blocks_manual_control);
     
     // Automatic target control tests
+    RUN_TEST(test_arm_target_then_fire);
     RUN_TEST(test_automatic_target_deploy);
     RUN_TEST(test_automatic_target_retrieve);
-    RUN_TEST(test_automatic_stops_at_target);
+    RUN_TEST(test_automatic_stops_and_disables_at_target);
     
     UNITY_END();
 }
