@@ -28,11 +28,17 @@ unsigned long last_pulse_count = 0;
 float target_rode_length = -1.0;  // Target length in meters (-1 = no target)
 bool winch_active = false;
 bool automatic_mode_enabled = false;  // Enable/disable automatic control (defaults to false/manual mode)
+SKOutputFloat* auto_mode_output_ptr = nullptr;  // Global pointer to auto mode output
 
 // Interrupt handler for pulse counting with direction
 void IRAM_ATTR pulseISR() {
     // Read direction pin: HIGH = increment (chain out), LOW = decrement (chain in)
-    if (digitalRead(DIRECTION_PIN) == HIGH) {
+    // Add a small delay to ensure direction signal has stabilized
+    delayMicroseconds(10);
+    
+    bool direction_high = digitalRead(DIRECTION_PIN);
+    
+    if (direction_high) {
         pulse_count++;
     } else {
         pulse_count--;
@@ -88,6 +94,16 @@ public:
     void update() {
         // Read the pulse count and convert to meters
         float meters = pulse_count * config_meters_per_pulse;
+        
+        // Debug: periodically log pulse count and direction state
+        static unsigned long last_debug = 0;
+        if (millis() - last_debug > 5000) {  // Every 5 seconds
+            bool dir_state = digitalRead(DIRECTION_PIN);
+            debugD("Pulse count: %ld, Direction pin: %s, Chain length: %.2f m", 
+                   pulse_count, dir_state ? "HIGH (out)" : "LOW (in)", meters);
+            last_debug = millis();
+        }
+        
         this->emit(meters);
         
         // Check if anchor reached home position while retrieving
@@ -110,13 +126,19 @@ public:
         was_home = is_home;
         
         // Check if we need to control the winch to reach target length
-        if (automatic_mode_enabled && target_rode_length >= 0 && winch_active) {
+        if (automatic_mode_enabled && target_rode_length >= 0) {
             float tolerance = config_meters_per_pulse * 2.0;  // 2 pulse tolerance
             
             if (fabs(meters - target_rode_length) <= tolerance) {
                 // Target reached
-                stopWinch();
-                debugD("Target rode length reached: %.2f m", meters);
+                if (winch_active) {
+                    stopWinch();
+                    automatic_mode_enabled = false;  // Turn off automatic mode when target reached
+                    if (auto_mode_output_ptr) {
+                        auto_mode_output_ptr->set_input(0.0);  // Update status to disabled (0.0 = disabled)
+                    }
+                    debugD("Target rode length reached: %.2f m - automatic mode disabled", meters);
+                }
             } else if (meters < target_rode_length) {
                 // Need more chain out
                 if (digitalRead(WINCH_DOWN_PIN) == LOW) {
@@ -219,14 +241,33 @@ void setup()
     // Send numeric values from Node-RED: any value > 0.5 = enable, <= 0.5 = disable
     debugD("Creating automatic mode listener on path: navigation.anchor.automaticModeCommand");
     auto* auto_mode_output = new SKOutputFloat("navigation.anchor.automaticModeStatus", "/automatic_mode_status/sk_path");
+    auto_mode_output_ptr = auto_mode_output;  // Store globally for access from update loop
     auto* auto_mode_listener = new FloatSKListener("navigation.anchor.automaticModeCommand");
     
-    auto_mode_listener->connect_to(new LambdaTransform<float, float>([](float value) {
+    auto_mode_listener->connect_to(new LambdaTransform<float, float>([pulse_counter](float value) {
+        debugD("*** AUTOMATIC MODE LISTENER TRIGGERED ***");
+        debugD("    Raw value received: %.10f", value);
+        debugD("    Hex representation: 0x%08X", *(uint32_t*)&value);
         bool enable = (value > 0.5);  // Values > 0.5 are true, <= 0.5 are false
-        debugD("Received automatic mode: %.2f -> %s", value, enable ? "ENABLED" : "DISABLED");
+        debugD("    Interpreted as: %s (current state was: %s)", 
+               enable ? "ENABLED" : "DISABLED",
+               automatic_mode_enabled ? "ENABLED" : "DISABLED");
         automatic_mode_enabled = enable;
         if (enable) {
             debugD("Automatic windlass control ENABLED");
+            // If target already set when enabling automatic mode, start winch immediately
+            if (target_rode_length >= 0) {
+                float current_length = pulse_count * pulse_counter->get_meters_per_pulse();
+                debugD("    Target already set to %.2f m, current: %.2f m - starting winch", 
+                       target_rode_length, current_length);
+                if (current_length < target_rode_length) {
+                    setWinchDown();  // Need more chain out
+                } else if (current_length > target_rode_length) {
+                    setWinchUp();    // Need chain in
+                } else {
+                    debugD("    Already at target length");
+                }
+            }
         } else {
             debugD("Automatic windlass control DISABLED");
             stopWinch();  // Stop winch when disabling automatic mode
@@ -235,15 +276,21 @@ void setup()
     }))->connect_to(auto_mode_output);
 
     // Add SignalK value listener for target rode length - listens on command path
+    debugD("Creating target rode listener on path: navigation.anchor.targetRodeCommand");
     auto* target_output = new SKOutputFloat("navigation.anchor.targetRodeStatus", "/target_rode_status/sk_path");
     auto* target_listener = new FloatSKListener("navigation.anchor.targetRodeCommand");
     
     // When target rode length is received, save it and start if automatic mode is enabled
     target_listener->connect_to(new LambdaTransform<float, float>([pulse_counter](float target_length) {
+        debugD("*** TARGET RODE LISTENER TRIGGERED ***");
+        debugD("    Raw value received: %.10f", target_length);
+        debugD("    Hex representation: 0x%08X", *(uint32_t*)&target_length);
+        
         target_rode_length = target_length;
         float current_length = pulse_count * pulse_counter->get_meters_per_pulse();
         
-        debugD("Target rode length set: %.2f m (current: %.2f m)", target_length, current_length);
+        debugD("    Target set to: %.2f m (current: %.2f m)", target_length, current_length);
+        debugD("    Automatic mode: %s", automatic_mode_enabled ? "ENABLED" : "DISABLED");
         
         // Only start winch if automatic mode is enabled
         if (automatic_mode_enabled && target_length >= 0) {
