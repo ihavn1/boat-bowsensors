@@ -206,8 +206,7 @@ void setup()
             debugD("Manual control: %s", command == 1 ? "UP" : (command == -1 ? "DOWN" : "STOP"));
         } else {
             debugD("Manual control blocked - automatic mode active");
-        }
-        return command;
+        }return command;
     }))->connect_to(manual_control_output);
 
     // Automatic Mode Control: Enable/disable automatic windlass control
