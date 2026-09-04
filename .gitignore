@@ -4,6 +4,10 @@
 .vscode/launch.json
 .vscode/ipch
 
+# Build log dumps
+*_build.txt
+build_*.txt
+
 # Credentials and secrets
 src/secrets.h
 secrets.h
