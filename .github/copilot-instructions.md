@@ -323,8 +323,7 @@ All systems check emergency stop before executing commands. Modify `SignalKServi
 - [README.md](../../README.md) - Usage guide and API documentation
 - [ANCHOR_CHAIN_USAGE.md](../../ANCHOR_CHAIN_USAGE.md) - Detailed usage examples
 - [REFACTORING_SUMMARY.md](../../REFACTORING_SUMMARY.md) - Architecture documentation
-- [SIGNALK_DEBUG_REPORT.md](../../SIGNALK_DEBUG_REPORT.md) - Known issues and debugging
-- [Hardware GPIO pins](../../HARDWARE.md) or check `pin_config.h`
+- Hardware GPIO pins - check `pin_config.h`
 
 ## 7. Common Gotchas
 
