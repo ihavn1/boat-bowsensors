@@ -1,6 +1,6 @@
 # Copilot Instructions
 
-This document provides guidance for AI agents to effectively contribute to the `boat.bow-controller` codebase.
+This document provides guidance for AI agents to effectively contribute to the `boat.bow-ecu` codebase.
 
 ## 1. The Big Picture: Architecture & Core Concepts
 
@@ -308,7 +308,7 @@ All systems check emergency stop before executing commands. Modify `SignalKServi
 
 1. **Serial output** (115200 baud) - Status updates every cycle if connected
 2. **Node-RED dashboard** - Real-time visualization of all commands/status
-3. **SensESP web UI** - Access at `http://bow-controller.local/` for configuration
+3. **SensESP web UI** - Access at `http://bow-ecu.local/` for configuration
 4. **PlatformIO monitor** - `pio device monitor` to watch serial output
 
 ### Performance Notes

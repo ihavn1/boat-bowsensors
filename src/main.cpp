@@ -113,8 +113,8 @@ void setup() {
     SensESPAppBuilder builder;
     updateApPasswordIfDefault(AP_PASSWORD);
     sensesp_app = builder
-                      .set_wifi_access_point("anchor-counter", AP_PASSWORD)
-                      ->set_hostname("anchor-counter")
+                      .set_wifi_access_point("bow-ecu", AP_PASSWORD)
+                      ->set_hostname("bow-ecu")
                       ->enable_ota(OTA_PASSWORD)
                       ->get_app();
 

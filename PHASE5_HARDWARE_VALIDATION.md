@@ -202,15 +202,15 @@ ESP32 3.3V → 10kΩ resistor → Button → GPIO
 **Windows Tools**:
 1. **Postman** (free, GUI REST client):
    - Send PUT requests to device HTTP API
-   - Example: `PUT http://anchor-counter.local:3000/navigation/anchor/manualControl -d '{"value": 1}'`
+   - Example: `PUT http://bow-ecu.local:3000/navigation/anchor/manualControl -d '{"value": 1}'`
 
 2. **curl** (command line):
    ```bash
    # Retrieve rode length
-   curl http://anchor-counter.local:3000/navigation/anchor/currentRode
+   curl http://bow-ecu.local:3000/navigation/anchor/currentRode
    
    # Send manual UP command
-   curl -X PUT http://anchor-counter.local:3000/navigation/anchor/manualControl \
+   curl -X PUT http://bow-ecu.local:3000/navigation/anchor/manualControl \
         -H "Content-Type: application/json" \
         -d '{"value": 1}'
    ```

@@ -408,7 +408,7 @@ return msg;
 ### Calibration
 The meters per pulse conversion factor (default: 0.1) can be configured via the SensESP web interface at:
 ```
-http://bow-controller.local/
+http://bow-ecu.local/
 ```
 
 Look for the "Meters per Pulse" configuration item to adjust the value based on your windlass gypsy diameter and pulse sensor.
@@ -419,7 +419,7 @@ Look for the "Meters per Pulse" configuration item to adjust the value based on 
 3. Upload over the network (device must be reachable):
 
 ```bash
-pio run --target upload --upload-port bow-controller.local
+pio run --target upload --upload-port bow-ecu.local
 ```
 
 ## Safety Features

@@ -56,8 +56,8 @@ An ESP32-based dual-system controller for anchor chain management and bow thrust
 
 1. **Hardware Setup**: Connect sensors and relays according to GPIO pin configuration
 2. **Flash Firmware**: Upload code to ESP32 using PlatformIO
-3. **Configure WiFi**: Connect to `anchor-counter` access point on first boot
-4. **Calibrate**: Set meters-per-pulse value via SensESP web UI at `http://anchor-counter.local/` 
+3. **Configure WiFi**: Connect to `bow-ecu` access point on first boot
+4. **Calibrate**: Set meters-per-pulse value via SensESP web UI at `http://bow-ecu.local/` 
    - Navigate to **System > Calibration** section
    - Adjust **Meters Per Pulse** value (default: 0.01m per pulse)
    - Value persists in device memory across reboots
@@ -212,7 +212,7 @@ pio run
 pio run --target upload
 
 # Upload OTA (device must be on the network)
-pio run --target upload --upload-port bow-controller.local
+pio run --target upload --upload-port bow-ecu.local
 
 # Monitor serial output
 pio device monitor
