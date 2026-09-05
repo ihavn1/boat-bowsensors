@@ -91,8 +91,8 @@ pio test -e esp32dev        # Hardware testing on ESP32
 
 ### Dependencies
 All dependencies in `platformio.ini`:
-- **SensESP 3.2.2** - Framework with SignalK integration
-- **ArduinoJson 7.4.2** - JSON handling
+- **SensESP 3.5.0** - Framework with SignalK integration
+- **ArduinoJson 7.4.3** - JSON handling
 - **esp32** core for platform definitions
 - **unity** - Test framework (built-in to PlatformIO)
 
