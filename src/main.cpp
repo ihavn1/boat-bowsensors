@@ -118,7 +118,7 @@ void setup() {
                       ->enable_ota(OTA_PASSWORD)
                       ->get_app();
 
-    // Register SensESP configuration items (must be before sensesp_app->start())
+    // Register SensESP configuration items before application initialization
     // Meters per pulse is a calibration value persisted in SPIFFS
     ConfigItem(new NumberConfig(g_config_meters_per_pulse, g_config_path_meters_per_pulse))
         ->set_title("Meters Per Pulse")
@@ -131,10 +131,7 @@ void setup() {
     // Load the configured value into the state manager
     app.getStateManager().setMetersPerPulse(g_config_meters_per_pulse);
 
-    // Initialize web UI and start
-    sensesp_app->start();
-
-    // After SensESP is initialized, start SignalK integration
+    // SensESP 3.5 starts during builder setup; start application integration
     app.startSignalK();
 
     debugD("Setup complete - waiting for SignalK connection");
