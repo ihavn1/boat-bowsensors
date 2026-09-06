@@ -137,11 +137,7 @@ void BoatBowControlApp::attachPulseISR() {
 void BoatBowControlApp::onEmergencyStopChanged(bool is_active, const char* reason) {
     // Update SignalK status when emergency stop state changes
     if (signalk_service_) {
-        auto status_value = signalk_service_->getEmergencyStopStatus();
-        if (status_value) {
-            status_value->set(is_active);
-            status_value->notify();  // Force emission even if unchanged
-        }
+        signalk_service_->publishEmergencyStopStatus(is_active);
     }
     
     if (is_active) {

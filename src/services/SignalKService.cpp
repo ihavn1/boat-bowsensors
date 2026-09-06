@@ -32,8 +32,7 @@ void SignalKService::initialize() {
 
 void SignalKService::setupRodeLengthOutput() {
     // Create the rode length output and set up periodic updates from state manager
-    rode_output_ = new SKOutputFloat("navigation.anchor.rodeLength", "/rode_length_sensor/sk_path");
-    rode_output_->set_metadata(new SKMetadata("m"));  // Set units to meters
+    rode_output_ = new SKOutputFloat("navigation.anchor.rodeLength", "/rode_length_sensor/sk_path", new SKMetadata("m"));
     rode_output_->set_input(0.0f);  // Initialize to 0
     
     // Periodic emission of rode length every 1000ms
@@ -71,13 +70,13 @@ void SignalKService::setupEmergencyStopBindings() {
         "notifications.systems.boatBowEcu.emergencyStop",
         "/emergency_stop_notification/sk_path"
     );
-    updateEmergencyStopOutputs(false);
+    publishEmergencyStopStatus(false);
     
     emergency_cmd_listener->connect_to(new LambdaTransform<bool, bool>([this](bool emergency_active) {
         if (!state_manager_.areCommandsAllowed() && !state_manager_.isEmergencyStopActive()) {
             // During startup, force status to false
             if (emergency_stop_status_value_) {
-                updateEmergencyStopOutputs(false);
+                publishEmergencyStopStatus(false);
             }
             return emergency_active;
         }
@@ -89,7 +88,7 @@ void SignalKService::setupEmergencyStopBindings() {
             // Update status value to reflect actual state and emit to SignalK
             if (emergency_stop_status_value_) {
                 bool actual_state = emergency_stop_service_->isActive();
-                updateEmergencyStopOutputs(actual_state);
+                publishEmergencyStopStatus(actual_state);
                 debugD("Emergency stop status updated: %s", actual_state ? "ACTIVE" : "CLEARED");
             }
         }
@@ -97,7 +96,7 @@ void SignalKService::setupEmergencyStopBindings() {
     }))->connect_to(emergency_stop_status_value_);
 }
 
-void SignalKService::updateEmergencyStopOutputs(bool active) {
+void SignalKService::publishEmergencyStopStatus(bool active) {
     emergency_stop_status_value_->set(active);
     emergency_stop_status_value_->notify();
 
@@ -148,8 +147,7 @@ void SignalKService::setupAutoModeBindings() {
     auto_mode_output_ = new SKOutputBool("navigation.anchor.windlass.automaticMode", "/automatic_mode_status/sk_path");
     
     // Target Rode Length: Arm target for automatic mode
-    target_output_ = new SKOutputFloat("navigation.anchor.targetRodeLength", "/target_rode_status/sk_path");
-    target_output_->set_metadata(new SKMetadata("m"));  // Set units to meters
+    target_output_ = new SKOutputFloat("navigation.anchor.targetRodeLength", "/target_rode_status/sk_path", new SKMetadata("m"));
     
     // Ensure auto mode starts disabled on boot and target is cleared
     if (auto_mode_controller_) {
@@ -286,6 +284,7 @@ void SignalKService::startConnectionMonitoring() {
         } else if (is_connected && !state_manager_.areCommandsAllowed() && connection_stable_time_ > 0 && millis() >= connection_stable_time_) {
             // Connection has been stable for 5 seconds - allow commands
             state_manager_.setCommandsAllowed(true);
+            publishCurrentState();
             debugD("SignalK connection stable - commands now allowed");
         }
         was_connected = is_connected;
@@ -295,11 +294,31 @@ void SignalKService::startConnectionMonitoring() {
             bool actual_state = emergency_stop_service_->isActive();
             bool current_value = emergency_stop_status_value_->get();
             if (actual_state != current_value) {
-                updateEmergencyStopOutputs(actual_state);
+                publishEmergencyStopStatus(actual_state);
                 debugD("Emergency stop status synced: %s", actual_state ? "ACTIVE" : "CLEARED");
             }
         }
     });
+}
+
+void SignalKService::publishCurrentState() {
+    updateRodeLength();
+
+    if (manual_control_output_) {
+        manual_control_output_->set_input(manual_control_output_->get());
+    }
+    if (auto_mode_output_) {
+        auto_mode_output_->set_input(auto_mode_output_->get());
+    }
+    if (target_output_) {
+        target_output_->set_input(target_output_->get());
+    }
+    if (bow_propeller_status_output_) {
+        bow_propeller_status_output_->set_input(bow_propeller_status_output_->get());
+    }
+    if (emergency_stop_service_) {
+        publishEmergencyStopStatus(emergency_stop_service_->isActive());
+    }
 }
 
 void SignalKService::setupBowPropellerBindings() {

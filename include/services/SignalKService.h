@@ -60,9 +60,9 @@ public:
     void startConnectionMonitoring();
 
     /**
-     * @brief Get the emergency stop status value (for manual updates)
+     * @brief Publish emergency stop state and its standard notification
      */
-    ObservableValue<bool>* getEmergencyStopStatus() { return emergency_stop_status_value_; }
+    void publishEmergencyStopStatus(bool active);
 
 private:
     // ========== Dependencies ==========
@@ -92,7 +92,7 @@ private:
     // ========== Helper Methods ==========
     void setupRodeLengthOutput();
     void setupEmergencyStopBindings();
-    void updateEmergencyStopOutputs(bool active);
+    void publishCurrentState();
     void setupManualControlBindings();
     void setupAutoModeBindings();
     void setupHomeCommandBindings();
