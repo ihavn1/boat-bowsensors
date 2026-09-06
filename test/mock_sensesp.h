@@ -8,6 +8,7 @@
 #include <vector>
 #include <functional>
 #include <memory>
+#include <string>
 
 namespace sensesp {
 
@@ -81,6 +82,25 @@ public:
     }
 };
 
+// Mock string listener
+class StringSKListener : public SKListener {
+public:
+    StringSKListener(const char* sk_path) : sk_path_(sk_path), listener_(nullptr) {}
+    const char* sk_path_;
+    std::function<void(std::string)>* listener_;
+
+    template <typename T>
+    void connect_to(T* consumer) {
+        listener_ = new std::function<void(std::string)>([consumer](const std::string& val) {
+            consumer->set_input(val);
+        });
+    }
+
+    void trigger(const std::string& value) {
+        if (listener_) (*listener_)(value);
+    }
+};
+
 // Mock observable value
 template <typename T>
 class ObservableValue {
@@ -150,6 +170,18 @@ public:
     float get_input() const { return value_; }
     
     float value_;
+};
+
+// Mock SKOutputString
+class SKOutputString : public SKOutput {
+public:
+    SKOutputString(const char* sk_path, const char* config_path)
+        : SKOutput(sk_path, config_path), value_() {}
+
+    void set_input(const std::string& value) { value_ = value; }
+    const std::string& get_input() const { return value_; }
+
+    std::string value_;
 };
 
 // Mock lambda transform

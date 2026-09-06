@@ -3,6 +3,7 @@
 
 #include <unity.h>
 #include <Arduino.h>
+#include <string>
 #include "pin_config.h"
 
 // Mock GPIO states for testing
@@ -282,14 +283,13 @@ void test_bow_controller_repeated_same_command(void) {
 
 // ========== SIGNALK COMMAND MAPPING TESTS ==========
 
-void test_signalk_command_minus_one_maps_to_port(void) {
+void test_signalk_command_port_maps_to_port(void) {
     MockBowPropellerMotor motor;
     motor.initialize();
     MockBowPropellerController controller(motor);
     
-    // SignalK command: -1 should turn port
-    int signalk_command = -1;
-    if (signalk_command == -1) {
+    std::string signalk_command = "port";
+    if (signalk_command == "port") {
         controller.turnPort();
     }
     
@@ -297,7 +297,7 @@ void test_signalk_command_minus_one_maps_to_port(void) {
     TEST_ASSERT_TRUE(motor.isPortActive());
 }
 
-void test_signalk_command_zero_maps_to_stop(void) {
+void test_signalk_command_stop_maps_to_stop(void) {
     MockBowPropellerMotor motor;
     motor.initialize();
     MockBowPropellerController controller(motor);
@@ -305,9 +305,8 @@ void test_signalk_command_zero_maps_to_stop(void) {
     controller.turnPort();
     TEST_ASSERT_TRUE(controller.isActive());
     
-    // SignalK command: 0 should stop
-    int signalk_command = 0;
-    if (signalk_command == 0) {
+    std::string signalk_command = "stop";
+    if (signalk_command == "stop") {
         controller.stop();
     }
     
@@ -315,14 +314,13 @@ void test_signalk_command_zero_maps_to_stop(void) {
     TEST_ASSERT_FALSE(controller.isActive());
 }
 
-void test_signalk_command_plus_one_maps_to_starboard(void) {
+void test_signalk_command_starboard_maps_to_starboard(void) {
     MockBowPropellerMotor motor;
     motor.initialize();
     MockBowPropellerController controller(motor);
     
-    // SignalK command: 1 should turn starboard
-    int signalk_command = 1;
-    if (signalk_command == 1) {
+    std::string signalk_command = "starboard";
+    if (signalk_command == "starboard") {
         controller.turnStarboard();
     }
     

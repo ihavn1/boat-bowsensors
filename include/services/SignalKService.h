@@ -78,12 +78,13 @@ private:
     SKOutputFloat* rode_output_ = nullptr;
     SKOutputBool* reset_output_ = nullptr;
     ObservableValue<bool>* emergency_stop_status_value_ = nullptr;
-    SKOutputInt* manual_control_output_ = nullptr;
-    SKOutputFloat* auto_mode_output_ = nullptr;
+    SKOutputRawJson* emergency_stop_notification_output_ = nullptr;
+    SKOutputString* manual_control_output_ = nullptr;
+    SKOutputBool* auto_mode_output_ = nullptr;
     SKOutputFloat* target_output_ = nullptr;
     SKOutputBool* home_command_output_ = nullptr;
-    SKOutputInt* bow_propeller_command_output_ = nullptr;
-    SKOutputInt* bow_propeller_status_output_ = nullptr;
+    SKOutputString* bow_propeller_command_output_ = nullptr;
+    SKOutputString* bow_propeller_status_output_ = nullptr;
 
     // ========== Connection Monitoring ==========
     unsigned long connection_stable_time_ = 0;
@@ -91,6 +92,7 @@ private:
     // ========== Helper Methods ==========
     void setupRodeLengthOutput();
     void setupEmergencyStopBindings();
+    void updateEmergencyStopOutputs(bool active);
     void setupManualControlBindings();
     void setupAutoModeBindings();
     void setupHomeCommandBindings();

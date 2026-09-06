@@ -20,9 +20,9 @@ extern void test_bow_controller_port_to_starboard_switching(void);
 extern void test_bow_controller_repeated_same_command(void);
 
 // SignalK command mapping tests
-extern void test_signalk_command_minus_one_maps_to_port(void);
-extern void test_signalk_command_zero_maps_to_stop(void);
-extern void test_signalk_command_plus_one_maps_to_starboard(void);
+extern void test_signalk_command_port_maps_to_port(void);
+extern void test_signalk_command_stop_maps_to_stop(void);
+extern void test_signalk_command_starboard_maps_to_starboard(void);
 
 // Safety tests
 extern void test_bow_motor_never_activates_both_relays(void);
@@ -833,9 +833,9 @@ void setup() {
     RUN_TEST(test_bow_controller_repeated_same_command);
     
     // Bow SignalK command mapping tests
-    RUN_TEST(test_signalk_command_minus_one_maps_to_port);
-    RUN_TEST(test_signalk_command_zero_maps_to_stop);
-    RUN_TEST(test_signalk_command_plus_one_maps_to_starboard);
+    RUN_TEST(test_signalk_command_port_maps_to_port);
+    RUN_TEST(test_signalk_command_stop_maps_to_stop);
+    RUN_TEST(test_signalk_command_starboard_maps_to_starboard);
     
     // Bow safety tests
     RUN_TEST(test_bow_motor_never_activates_both_relays);

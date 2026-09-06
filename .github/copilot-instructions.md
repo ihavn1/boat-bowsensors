@@ -193,7 +193,7 @@ auto_mode_controller = new AutomaticModeController(winch_controller);
 ```cpp
 // Create output producer
 auto rode_output = new SKOutputFloat(
-    "navigation.anchor.currentRode",
+    "navigation.anchor.rodeLength",
     "Current rode deployed",
     nullptr, nullptr);
 

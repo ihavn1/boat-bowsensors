@@ -69,47 +69,50 @@ An ESP32-based dual-system controller for anchor chain management and bow thrust
 ### Anchor Windlass - Outputs (Device → SignalK)
 | Path | Type | Units | Description |
 |------|------|-------|-------------|
-| `navigation.anchor.currentRode` | float | m | Current chain length deployed (meters) |
-| `navigation.anchor.automaticModeStatus` | float | - | Automatic mode state (1.0=enabled, 0.0=disabled) |
-| `navigation.anchor.targetRodeStatus` | float | m | Current armed target length |
-| `navigation.anchor.manualControlStatus` | int | - | Manual control state (1=UP, 0=STOP, -1=DOWN) |
+| `navigation.anchor.rodeLength` | float | m | Current deployed rode length |
+| `navigation.anchor.windlass.automaticMode` | bool | - | Whether automatic mode is enabled |
+| `navigation.anchor.targetRodeLength` | float | m | Current armed target length |
+| `navigation.anchor.windlass.state` | string | - | Current state (`up`, `down`, or `stopped`) |
 
 ### Anchor Windlass - Inputs (SignalK → Device)
 | Path | Type | Values | Description |
 |------|------|--------|-------------|
-| `navigation.anchor.automaticModeCommand` | float | >0.5=enable, ≤0.5=disable | Enable/disable automatic mode |
-| `navigation.anchor.targetRodeCommand` | float | meters | Arm target length for automatic winching |
-| `navigation.anchor.manualControl` | int | 1=UP, 0=STOP, -1=DOWN | Manual winch control command |
+| `navigation.anchor.windlass.automaticModeCommand` | bool | true/false | Enable or disable automatic mode |
+| `navigation.anchor.targetRodeLengthCommand` | float | metres | Arm target length for automatic winching |
+| `navigation.anchor.windlass.command` | string | `up`, `stop`, `down` | Manual winch control command |
 | `navigation.anchor.resetRode` | bool | true | Reset chain counter to zero |
 
 ### Bow Thruster - Outputs (Device → SignalK)
 | Path | Type | Units | Description |
 |------|------|-------|-------------|
-| `propulsion.bowThruster.status` | int | - | Thruster direction (1=STARBOARD, 0=STOP, -1=PORT) |
+| `propulsion.bowThruster.direction` | string | - | Current direction (`starboard`, `stopped`, or `port`) |
 
 ### Bow Thruster - Inputs (SignalK → Device)
 | Path | Type | Values | Description |
 |------|------|--------|-------------|
-| `propulsion.bowThruster.command` | int | 1=STARBOARD, 0=STOP, -1=PORT | Bow thruster command |
+| `propulsion.bowThruster.command` | string | `starboard`, `stop`, `port` | Bow thruster command |
 
 ### Emergency Stop - Both Systems
 | Path | Type | Description |
 |------|------|-------------|
-| `navigation.bow.ecu.emergencyStopCommand` | bool | Command emergency stop (true=activate, false=clear) |
-| `navigation.bow.ecu.emergencyStopStatus` | bool | Current emergency stop state |
+| `systems.boatBowEcu.emergencyStopCommand` | bool | Command emergency stop (true=activate, false=clear) |
+| `systems.boatBowEcu.emergencyStop` | bool | Current emergency stop state |
+| `notifications.systems.boatBowEcu.emergencyStop` | notification | Standard Signal K `normal`/`emergency` notification |
+
+These application-specific paths extend Signal K; they are not part of the official schema. The `propulsion.bowThruster` segment follows the standard `propulsion.<instance>` structure.
 
 ## Usage Examples
 
 ### Bow Thruster Control (Automatic/SignalK)
 ```json
 // Activate bow thruster to starboard
-{"path": "propulsion.bowThruster.command", "value": 1}
+{"path": "propulsion.bowThruster.command", "value": "starboard"}
 
 // Stop bow thruster
-{"path": "propulsion.bowThruster.command", "value": 0}
+{"path": "propulsion.bowThruster.command", "value": "stop"}
 
 // Activate bow thruster to port
-{"path": "propulsion.bowThruster.command", "value": -1}
+{"path": "propulsion.bowThruster.command", "value": "port"}
 ```
 
 ### Bow Thruster Control (Remote Buttons)
@@ -121,10 +124,10 @@ The physical remote control provides immediate control:
 ### Anchor Windlass - Automatic Deployment (Arm and Fire)
 ```json
 // 1. Arm target (prepare but don't start)
-{"path": "navigation.anchor.targetRodeCommand", "value": 15.0}
+{"path": "navigation.anchor.targetRodeLengthCommand", "value": 15.0}
 
 // 2. Fire when ready (starts windlass automatically)
-{"path": "navigation.anchor.automaticModeCommand", "value": 1.0}
+{"path": "navigation.anchor.windlass.automaticModeCommand", "value": true}
 
 // System will automatically disable when target reached
 ```
@@ -132,13 +135,13 @@ The physical remote control provides immediate control:
 ### Anchor Windlass - Manual Control
 ```json
 // Retrieve chain
-{"path": "navigation.anchor.manualControl", "value": 1}
+{"path": "navigation.anchor.windlass.command", "value": "up"}
 
 // Stop windlass
-{"path": "navigation.anchor.manualControl", "value": 0}
+{"path": "navigation.anchor.windlass.command", "value": "stop"}
 
 // Deploy chain
-{"path": "navigation.anchor.manualControl", "value": -1}
+{"path": "navigation.anchor.windlass.command", "value": "down"}
 ```
 
 ### Physical Remote Control (Anchor)
@@ -152,10 +155,10 @@ Note: Remote control takes priority over SignalK commands and automatically disa
 ### Emergency Stop (Both Systems)
 ```json
 // Immediately stop all motors (anchor + bow thruster)
-{"path": "navigation.bow.ecu.emergencyStopCommand", "value": true}
+{"path": "systems.boatBowEcu.emergencyStopCommand", "value": true}
 
 // Resume operations
-{"path": "navigation.bow.ecu.emergencyStopCommand", "value": false}
+{"path": "systems.boatBowEcu.emergencyStopCommand", "value": false}
 ```
 
 ## Safety Considerations

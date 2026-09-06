@@ -91,7 +91,7 @@ public:
     }
     
     void setupRodeLengthOutput() {
-        rode_output_ = new sensesp::SKOutputFloat("navigation.anchor.currentRode", "");
+        rode_output_ = new sensesp::SKOutputFloat("navigation.anchor.rodeLength", "");
         rode_output_->set_metadata(new sensesp::SKMetadata("m"));
     }
     
@@ -101,8 +101,8 @@ public:
     }
     
     void setupManualControlBindings() {
-        manual_control_output_ = new sensesp::SKOutputInt("navigation.anchor.manualControlStatus", "");
-        manual_control_output_->set_input(0);
+        manual_control_output_ = new sensesp::SKOutputString("navigation.anchor.windlass.state", "");
+        manual_control_output_->set_input("stopped");
     }
     
     void updateRodeLength(float length) {
@@ -121,22 +121,22 @@ public:
         }
     }
     
-    void triggerManualControl(int command) {
-        if (command == 1) {
+    void triggerManualControl(const std::string& command) {
+        if (command == "up") {
             winch_controller_.moveUp();
-        } else if (command == -1) {
+        } else if (command == "down") {
             winch_controller_.moveDown();
         } else {
             winch_controller_.stop();
         }
         if (manual_control_output_) {
-            manual_control_output_->set_input(command);
+            manual_control_output_->set_input(command == "up" || command == "down" ? command : "stopped");
         }
     }
     
     // Accessors for testing
     sensesp::SKOutputFloat* getRodeOutput() { return rode_output_; }
-    sensesp::SKOutputInt* getManualControlOutput() { return manual_control_output_; }
+    sensesp::SKOutputString* getManualControlOutput() { return manual_control_output_; }
     sensesp::ObservableValue<bool>* getEmergencyStopStatus() { return emergency_stop_status_value_; }
     
 private:
@@ -148,7 +148,7 @@ private:
     MockPulseCounterService* pulse_counter_service_;
     
     sensesp::SKOutputFloat* rode_output_ = nullptr;
-    sensesp::SKOutputInt* manual_control_output_ = nullptr;
+    sensesp::SKOutputString* manual_control_output_ = nullptr;
     sensesp::ObservableValue<bool>* emergency_stop_status_value_ = nullptr;
 };
 
@@ -168,6 +168,8 @@ void test_signalk_service_initialization() {
     TEST_ASSERT_NOT_NULL(service.getRodeOutput());
     TEST_ASSERT_NOT_NULL(service.getManualControlOutput());
     TEST_ASSERT_NOT_NULL(service.getEmergencyStopStatus());
+    TEST_ASSERT_EQUAL_STRING("navigation.anchor.rodeLength", service.getRodeOutput()->sk_path_);
+    TEST_ASSERT_EQUAL_STRING("navigation.anchor.windlass.state", service.getManualControlOutput()->sk_path_);
 }
 
 void test_rode_length_output() {
@@ -216,11 +218,11 @@ void test_manual_control_up() {
     TestSignalKService service(state_mgr, winch, home, &auto_mode, &emergency, &pulse);
     service.initialize();
     
-    service.triggerManualControl(1);  // UP
+    service.triggerManualControl("up");
     
     TEST_ASSERT_TRUE(winch.isActive());
     TEST_ASSERT_EQUAL_INT(1, winch.direction_);
-    TEST_ASSERT_EQUAL_INT(1, service.getManualControlOutput()->get_input());
+    TEST_ASSERT_EQUAL_STRING("up", service.getManualControlOutput()->get_input().c_str());
 }
 
 void test_manual_control_down() {
@@ -234,11 +236,11 @@ void test_manual_control_down() {
     TestSignalKService service(state_mgr, winch, home, &auto_mode, &emergency, &pulse);
     service.initialize();
     
-    service.triggerManualControl(-1);  // DOWN
+    service.triggerManualControl("down");
     
     TEST_ASSERT_TRUE(winch.isActive());
     TEST_ASSERT_EQUAL_INT(-1, winch.direction_);
-    TEST_ASSERT_EQUAL_INT(-1, service.getManualControlOutput()->get_input());
+    TEST_ASSERT_EQUAL_STRING("down", service.getManualControlOutput()->get_input().c_str());
 }
 
 void test_manual_control_stop() {
@@ -252,12 +254,12 @@ void test_manual_control_stop() {
     TestSignalKService service(state_mgr, winch, home, &auto_mode, &emergency, &pulse);
     service.initialize();
     
-    service.triggerManualControl(1);  // UP first
+    service.triggerManualControl("up");
     TEST_ASSERT_TRUE(winch.isActive());
     
-    service.triggerManualControl(0);  // STOP
+    service.triggerManualControl("stop");
     
     TEST_ASSERT_FALSE(winch.isActive());
     TEST_ASSERT_EQUAL_INT(0, winch.direction_);
-    TEST_ASSERT_EQUAL_INT(0, service.getManualControlOutput()->get_input());
+    TEST_ASSERT_EQUAL_STRING("stopped", service.getManualControlOutput()->get_input().c_str());
 }

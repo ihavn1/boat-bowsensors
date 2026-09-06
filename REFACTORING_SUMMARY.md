@@ -55,10 +55,10 @@ Renamed to explicitly clarify that this class is responsible for **anchor-specif
 
 **SignalKService** (Extended)
 - Anchor paths: `navigation.anchor.*` (original functionality)
-- Bow paths: `propulsion.bowThruster.command` and `propulsion.bowThruster.status`
-- Emergency stop paths: `navigation.bow.ecu.emergencyStop*`
+- Bow paths: `propulsion.bowThruster.command` and `propulsion.bowThruster.direction`
+- Emergency stop paths: `systems.boatBowEcu.emergencyStop*`
 - Consistent safety blocking during connection loss or emergency stop
-- Command validation: -1/0/1 mapping for both systems
+- Command validation: descriptive string values for directional commands
 
 ### Consolidated Application
 

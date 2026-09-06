@@ -407,7 +407,7 @@ Setup:
 Expected:
   - Pulse count increases by 20
   - Rode length increases by 0.2m (20 pulses × 0.01m/pulse)
-  - SignalK output: navigation.anchor.currentRode = 0.2
+  - SignalK output: navigation.anchor.rodeLength = 0.2
 
 Verify via logs:
   - Serial should show: "Pulse count: 20, Rode: 0.20m"
@@ -546,13 +546,14 @@ Setup:
   - While motor running, activate emergency stop
 
 Command (SignalK):
-  PUT /navigation/bow/ecu/emergencyStopCommand = true
+  PUT /systems/boatBowEcu/emergencyStopCommand = true
 
 Expected Immediately:
   - Both WINCH_UP (GPIO 27) and WINCH_DOWN (GPIO 14) → HIGH (motor stops)
   - Both BOW_PORT (GPIO 4) and BOW_STARBOARD (GPIO 5) → HIGH (both stop)
   - Serial log: "EMERGENCY STOP ACTIVATED"
-  - SignalK output: navigation.bow.ecu.emergencyStopStatus = true
+  - SignalK output: systems.boatBowEcu.emergencyStop = true
+  - SignalK notification: notifications.systems.boatBowEcu.emergencyStop.state = "emergency"
   - All control inputs blocked (both anchor and bow)
 
 Timing:
@@ -577,10 +578,11 @@ Expected:
 **Test 2.4.3: Clear Emergency Stop**
 ```
 Command (SignalK):
-  PUT /navigation/bow/ecu/emergencyStopCommand = false
+  PUT /systems/boatBowEcu/emergencyStopCommand = false
 
 Expected:
-  - SignalK output: navigation.bow.ecu.emergencyStopStatus = false
+  - SignalK output: systems.boatBowEcu.emergencyStop = false
+  - SignalK notification: notifications.systems.boatBowEcu.emergencyStop.state = "normal"
   - Control inputs accepted again
   - Both anchor and bow motors can be commanded
 
@@ -611,7 +613,7 @@ Press physical UP button
 Expected:
   - WINCH_UP → LOW within 10ms
   - Motor activates
-  - SignalK manual control status updates to 1
+  - SignalK windlass state updates to `up`
   - Works even if SignalK sends STOP command
 ```
 
@@ -622,7 +624,7 @@ Press physical DOWN button
 Expected:
   - WINCH_DOWN → LOW within 10ms
   - Motor activates
-  - SignalK status updates to -1
+  - SignalK windlass state updates to `down`
 ```
 
 **Test 2.5.3: Button Release Stops Motor**
@@ -664,10 +666,10 @@ Expected:
 **Test 2.6.1: Arm Target**
 ```
 Command (SignalK):
-  PUT /navigation/anchor/targetRodeCommand = 5.0
+  PUT /navigation/anchor/targetRodeLengthCommand = 5.0
 
 Expected:
-  - SignalK output: navigation.anchor.targetRodeStatus = 5.0
+  - SignalK output: navigation.anchor.targetRodeLength = 5.0
   - Logs show: "Target armed: 5.0m"
   - Motor does NOT activate (not yet fired)
   - Current rode: 2.0m → Target: 5.0m
@@ -683,7 +685,7 @@ Prerequisites:
   - Current rode: 2.0m
 
 Command (SignalK):
-  PUT /navigation/anchor/automaticModeCommand = 1.0
+  PUT /navigation/anchor/windlass/automaticModeCommand = true
 
 Expected:
   - WINCH_DOWN (GPIO 14) → LOW (deploy chain)
@@ -694,7 +696,7 @@ Expected:
 Continue until:
   - Rode length reaches 5.0m ± tolerance (0.02m)
   - WINCH_DOWN (GPIO 14) → HIGH (motor stops)
-  - SignalK output: navigation.anchor.automaticModeStatus = 0 (auto-disabled)
+  - SignalK output: navigation.anchor.windlass.automaticMode = false
   - Logs show: "Target reached, auto-mode disabled"
 
 Timing:
@@ -708,7 +710,7 @@ Prerequisites:
   - Target armed at 5.0m
 
 Command (SignalK):
-  PUT /navigation/anchor/automaticModeCommand = 1.0
+  PUT /navigation/anchor/windlass/automaticModeCommand = true
 
 Expected:
   - WINCH_UP (GPIO 27) → LOW (retrieve chain)
@@ -719,7 +721,7 @@ Expected:
 Continue until:
   - Rode length reaches 5.0m ± tolerance
   - WINCH_UP (GPIO 27) → HIGH (motor stops)
-  - SignalK output: navigation.anchor.automaticModeStatus = 0
+  - SignalK output: navigation.anchor.windlass.automaticMode = false
 ```
 
 **Test 2.6.4: Automatic Mode Blocked at Home**
@@ -743,7 +745,7 @@ Prerequisites:
   - Deploying to target
 
 Send manual command (SignalK):
-  PUT /navigation/anchor/manualControl = -1
+  PUT /navigation/anchor/windlass/command = "down"
 
 Expected:
   - Automatic mode disables immediately
@@ -784,26 +786,26 @@ Expected in logs:
 Expected in logs:
   - "Connecting to SignalK server..."
   - "SignalK connection established"
-  - "Publishing: navigation.anchor.currentRode = X"
+  - "Publishing: navigation.anchor.rodeLength = X"
 ```
 
 **Test 2.7.3: Status Outputs**
 ```
 Check SignalK server for values:
-  - navigation.anchor.currentRode (rode deployed, meters)
-  - navigation.bow.ecu.emergencyStopStatus (0/1 boolean)
-  - navigation.anchor.manualControlStatus (current manual state)
-  - navigation.anchor.automaticModeStatus (auto mode running)
-  - navigation.anchor.targetRodeStatus (armed target)
+  - navigation.anchor.rodeLength (rode deployed, metres)
+  - systems.boatBowEcu.emergencyStop (boolean)
+  - navigation.anchor.windlass.state (current manual state)
+  - navigation.anchor.windlass.automaticMode (auto mode running)
+  - navigation.anchor.targetRodeLength (armed target)
 ```
 
 **Test 2.7.4: Input Listeners**
 ```
 Send values from SignalK server:
-  - navigation.anchor.manualControl = 1 (expect motor UP)
-  - navigation.bow.ecu.emergencyStopCommand = true (expect all motors stop)
-  - navigation.anchor.automaticModeCommand = 1.0 (expect auto-mode)
-  - navigation.anchor.targetRodeCommand = X (expect target armed)
+  - navigation.anchor.windlass.command = "up" (expect motor UP)
+  - systems.boatBowEcu.emergencyStopCommand = true (expect all motors stop)
+  - navigation.anchor.windlass.automaticModeCommand = true (expect auto-mode)
+  - navigation.anchor.targetRodeLengthCommand = X (expect target armed)
 
 Verify device responds to each
 ```
@@ -1043,18 +1045,18 @@ Success:
 ```
 Setup:
   - Activate STARBOARD via remote
-  - Subscribe to propulsion.bowThruster.status
+  - Subscribe to propulsion.bowThruster.direction
 
 Expected in SignalK:
-  - propulsion.bowThruster.status = 1 (STARBOARD)
+  - propulsion.bowThruster.direction = "starboard"
   
 Switch direction:
   - Send PORT command
-  - propulsion.bowThruster.status = -1
+  - propulsion.bowThruster.direction = "port"
 
 Switch to STOP:
   - Send STOP command
-  - propulsion.bowThruster.status = 0
+  - propulsion.bowThruster.direction = "stopped"
 
 Success:
   - ✅ Status reflects actual direction
@@ -1064,9 +1066,9 @@ Success:
 **Test: SignalK Command Values**
 ```
 Verify command mapping:
-  - PUT command = -1 → PORT
-  - PUT command = 0 → STOP
-  - PUT command = 1 → STARBOARD
+  - PUT command = "port" → PORT
+  - PUT command = "stop" → STOP
+  - PUT command = "starboard" → STARBOARD
   - All other values → STOP (safe fallback)
 ```
 

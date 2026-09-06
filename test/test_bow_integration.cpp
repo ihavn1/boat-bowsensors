@@ -3,6 +3,7 @@
 
 #include <unity.h>
 #include <Arduino.h>
+#include <string>
 #include "pin_config.h"
 
 extern bool mock_gpio_states[40];
@@ -104,7 +105,7 @@ public:
         : controller_(controller),
           emergency_service_(emergency_service),
           is_connected_(false),
-          last_signalk_command_(0),
+          last_signalk_command_("stop"),
           blocked_count_(0),
           executed_count_(0) {}
     
@@ -122,7 +123,7 @@ public:
      * - Emergency stop is active
      * - Not connected to SignalK server (5-second check)
      */
-    bool processCommand(int command) {
+    bool processCommand(const std::string& command) {
         last_signalk_command_ = command;
         
         // Block if emergency stop active
@@ -139,34 +140,38 @@ public:
         }
         
         // Execute command
-        if (command == -1) {
+        if (command == "port") {
             controller_.turnPort();
-        } else if (command == 0) {
+        } else if (command == "stop") {
             controller_.stop();
-        } else if (command == 1) {
+        } else if (command == "starboard") {
             controller_.turnStarboard();
+        } else {
+            return false;
         }
         
         executed_count_++;
         return true;
     }
     
-    int getLastCommand() const { return last_signalk_command_; }
+    const std::string& getLastCommand() const { return last_signalk_command_; }
     int getBlockedCount() const { return blocked_count_; }
     int getExecutedCount() const { return executed_count_; }
     
     /**
      * Mock status output - simulates publishing status to SignalK
      */
-    int getStatusValue() const {
-        return controller_.getLastCommand();
+    const char* getStatusValue() const {
+        if (controller_.getLastCommand() == -1) return "port";
+        if (controller_.getLastCommand() == 1) return "starboard";
+        return "stopped";
     }
     
 private:
     IntegrationMockController& controller_;
     MockEmergencyStopService& emergency_service_;
     bool is_connected_;
-    int last_signalk_command_;
+    std::string last_signalk_command_;
     int blocked_count_;
     int executed_count_;
 };
@@ -232,7 +237,7 @@ void test_signalk_sends_port_command(void) {
     MockSignalKService signalk(controller, emergency);
     
     signalk.setConnected(true);
-    bool executed = signalk.processCommand(-1);  // PORT
+    bool executed = signalk.processCommand("port");
     
     TEST_ASSERT_TRUE(executed);
     TEST_ASSERT_EQUAL_INT(-1, controller.getLastCommand());
@@ -247,10 +252,10 @@ void test_signalk_sends_stop_command(void) {
     MockSignalKService signalk(controller, emergency);
     
     signalk.setConnected(true);
-    signalk.processCommand(-1);  // Turn port first
+    signalk.processCommand("port");
     TEST_ASSERT_TRUE(controller.isActive());
     
-    bool executed = signalk.processCommand(0);  // STOP
+    bool executed = signalk.processCommand("stop");
     
     TEST_ASSERT_TRUE(executed);
     TEST_ASSERT_EQUAL_INT(0, controller.getLastCommand());
@@ -265,7 +270,7 @@ void test_signalk_sends_starboard_command(void) {
     MockSignalKService signalk(controller, emergency);
     
     signalk.setConnected(true);
-    bool executed = signalk.processCommand(1);  // STARBOARD
+    bool executed = signalk.processCommand("starboard");
     
     TEST_ASSERT_TRUE(executed);
     TEST_ASSERT_EQUAL_INT(1, controller.getLastCommand());
@@ -281,14 +286,14 @@ void test_signalk_status_output_reflects_state(void) {
     
     signalk.setConnected(true);
     
-    signalk.processCommand(-1);
-    TEST_ASSERT_EQUAL_INT(-1, signalk.getStatusValue());
+    signalk.processCommand("port");
+    TEST_ASSERT_EQUAL_STRING("port", signalk.getStatusValue());
     
-    signalk.processCommand(0);
-    TEST_ASSERT_EQUAL_INT(0, signalk.getStatusValue());
+    signalk.processCommand("stop");
+    TEST_ASSERT_EQUAL_STRING("stopped", signalk.getStatusValue());
     
-    signalk.processCommand(1);
-    TEST_ASSERT_EQUAL_INT(1, signalk.getStatusValue());
+    signalk.processCommand("starboard");
+    TEST_ASSERT_EQUAL_STRING("starboard", signalk.getStatusValue());
 }
 
 void test_signalk_blocks_when_not_connected(void) {
@@ -299,7 +304,7 @@ void test_signalk_blocks_when_not_connected(void) {
     MockSignalKService signalk(controller, emergency);
     
     signalk.setConnected(false);
-    bool executed = signalk.processCommand(-1);
+    bool executed = signalk.processCommand("port");
     
     TEST_ASSERT_FALSE(executed);
     TEST_ASSERT_EQUAL_INT(1, signalk.getBlockedCount());
@@ -316,7 +321,7 @@ void test_signalk_blocks_when_emergency_stop_active(void) {
     signalk.setConnected(true);
     emergency.setActive(true);
     
-    bool executed = signalk.processCommand(-1);
+    bool executed = signalk.processCommand("port");
     
     TEST_ASSERT_FALSE(executed);
     TEST_ASSERT_EQUAL_INT(1, signalk.getBlockedCount());
@@ -334,12 +339,12 @@ void test_signalk_commands_resume_after_emergency_stop_cleared(void) {
     
     // Initially blocked
     emergency.setActive(true);
-    bool executed = signalk.processCommand(-1);
+    bool executed = signalk.processCommand("port");
     TEST_ASSERT_FALSE(executed);
     
     // After clearing emergency stop, commands work again
     emergency.setActive(false);
-    executed = signalk.processCommand(-1);
+    executed = signalk.processCommand("port");
     TEST_ASSERT_TRUE(executed);
     TEST_ASSERT_EQUAL_INT(-1, controller.getLastCommand());
 }
@@ -353,12 +358,12 @@ void test_signalk_reconnection_resumes_commands(void) {
     
     // Initially disconnected
     signalk.setConnected(false);
-    bool executed = signalk.processCommand(-1);
+    bool executed = signalk.processCommand("port");
     TEST_ASSERT_FALSE(executed);
     
     // After reconnection, commands work
     signalk.setConnected(true);
-    executed = signalk.processCommand(-1);
+    executed = signalk.processCommand("port");
     TEST_ASSERT_TRUE(executed);
     TEST_ASSERT_EQUAL_INT(-1, controller.getLastCommand());
 }
@@ -375,13 +380,13 @@ void test_emergency_stop_blocks_signalk_commands(void) {
     signalk.setConnected(true);
     
     // Start with normal operation
-    bool executed = signalk.processCommand(-1);
+    bool executed = signalk.processCommand("port");
     TEST_ASSERT_TRUE(executed);
     TEST_ASSERT_TRUE(controller.isActive());
     
     // Emergency stop blocks new commands
     emergency.setActive(true);
-    executed = signalk.processCommand(1);
+    executed = signalk.processCommand("starboard");
     TEST_ASSERT_FALSE(executed);
     TEST_ASSERT_EQUAL_INT(-1, controller.getLastCommand());  // Unchanged
 }
@@ -417,7 +422,7 @@ void test_emergency_stop_activation_stops_motor(void) {
     signalk.setConnected(true);
     
     // Start operating
-    signalk.processCommand(-1);
+    signalk.processCommand("port");
     TEST_ASSERT_TRUE(controller.isActive());
     
     // Emergency stop gets activated - it should stop the motor
@@ -439,9 +444,9 @@ void test_emergency_stop_counts_blocked_attempts(void) {
     emergency.setActive(true);
     
     // Try multiple commands while stopped
-    signalk.processCommand(-1);
-    signalk.processCommand(1);
-    signalk.processCommand(-1);
+    signalk.processCommand("port");
+    signalk.processCommand("starboard");
+    signalk.processCommand("port");
     
     TEST_ASSERT_EQUAL_INT(3, signalk.getBlockedCount());
     TEST_ASSERT_EQUAL_INT(0, signalk.getExecutedCount());
@@ -503,7 +508,7 @@ void test_signalk_and_remote_can_coexist(void) {
     signalk.setConnected(true);
     
     // SignalK sends command
-    signalk.processCommand(-1);
+    signalk.processCommand("port");
     TEST_ASSERT_EQUAL_INT(-1, controller.getLastCommand());
     
     // Remote overrides with different command
@@ -511,7 +516,7 @@ void test_signalk_and_remote_can_coexist(void) {
     TEST_ASSERT_EQUAL_INT(1, controller.getLastCommand());
     
     // SignalK can regain control
-    signalk.processCommand(-1);
+    signalk.processCommand("port");
     TEST_ASSERT_EQUAL_INT(-1, controller.getLastCommand());
 }
 
@@ -526,7 +531,7 @@ void test_emergency_stop_blocks_both_signalk_and_remote(void) {
     signalk.setConnected(true);
     emergency.setActive(true);
     
-    bool signalk_exec = signalk.processCommand(-1);
+    bool signalk_exec = signalk.processCommand("port");
     bool remote_exec = remote.processFUNC4Press();
     
     TEST_ASSERT_FALSE(signalk_exec);
@@ -554,7 +559,7 @@ void test_full_scenario_normal_operation(void) {
     TEST_ASSERT_EQUAL_INT(0, controller.getLastCommand());
     
     // 3. SignalK takes over - turns starboard
-    signalk.processCommand(1);
+    signalk.processCommand("starboard");
     TEST_ASSERT_EQUAL_INT(1, controller.getLastCommand());
     
     // 4. Emergency stop activated
@@ -564,7 +569,7 @@ void test_full_scenario_normal_operation(void) {
     
     // 5. Both remote and SignalK blocked
     bool remote_blocked = !remote.processFUNC3Press();
-    bool signalk_blocked = !signalk.processCommand(1);
+    bool signalk_blocked = !signalk.processCommand("starboard");
     TEST_ASSERT_TRUE(remote_blocked);
     TEST_ASSERT_TRUE(signalk_blocked);
 }

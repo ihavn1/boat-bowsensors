@@ -13,39 +13,42 @@ This guide covers both subsystems and their integration.
 ### Anchor Windlass - Output Paths (Device → SignalK)
 | Path | Type | Units | Update Rate | Description |
 |------|------|-------|-------------|-------------|
-| `navigation.anchor.currentRode` | float | m | 1s | Current chain length deployed (meters) |
-| `navigation.anchor.automaticModeStatus` | float | - | on change | Auto mode state (1.0=enabled, 0.0=disabled) |
-| `navigation.anchor.targetRodeStatus` | float | m | on change | Armed target length (meters) |
-| `navigation.anchor.manualControlStatus` | int | - | on change | Manual control state (1=UP, 0=STOP, -1=DOWN) |
+| `navigation.anchor.rodeLength` | float | m | 1s | Current deployed rode length |
+| `navigation.anchor.windlass.automaticMode` | bool | - | on change | Whether automatic mode is enabled |
+| `navigation.anchor.targetRodeLength` | float | m | on change | Armed target length |
+| `navigation.anchor.windlass.state` | string | - | on change | Current state (`up`, `down`, or `stopped`) |
 
 ### Anchor Windlass - Input Paths (SignalK → Device)
 | Path | Type | Values | Description |
 |------|------|--------|-------------|
-| `navigation.anchor.automaticModeCommand` | float | >0.5=enable, ≤0.5=disable | Enable/disable automatic control |
-| `navigation.anchor.targetRodeCommand` | float | meters | Arm target for automatic mode |
-| `navigation.anchor.manualControl` | int | 1=UP, 0=STOP, -1=DOWN | Manual windlass control |
+| `navigation.anchor.windlass.automaticModeCommand` | bool | true/false | Enable or disable automatic control |
+| `navigation.anchor.targetRodeLengthCommand` | float | metres | Arm target for automatic mode |
+| `navigation.anchor.windlass.command` | string | `up`, `stop`, `down` | Manual windlass control |
 | `navigation.anchor.resetRode` | bool | true | Reset counter to zero |
 
 ### Bow Thruster - Output Paths (Device → SignalK)
 | Path | Type | Units | Description |
 |------|------|-------|-------------|
-| `propulsion.bowThruster.status` | int | - | Current direction (1=STARBOARD, 0=STOP, -1=PORT) |
+| `propulsion.bowThruster.direction` | string | - | Current direction (`starboard`, `stopped`, or `port`) |
 
 ### Bow Thruster - Input Paths (SignalK → Device)
 | Path | Type | Values | Description |
 |------|------|--------|-------------|
-| `propulsion.bowThruster.command` | int | -1=PORT, 0=STOP, 1=STARBOARD | Bow thruster command |
+| `propulsion.bowThruster.command` | string | `port`, `stop`, `starboard` | Bow thruster command |
 
 ### Emergency Stop (Both Systems)
 | Path | Type | Description |
 |------|------|-------------|
-| `navigation.bow.ecu.emergencyStopCommand` | bool | Activate (true) or clear (false) emergency stop |
-| `navigation.bow.ecu.emergencyStopStatus` | bool | Current emergency stop state |
+| `systems.boatBowEcu.emergencyStopCommand` | bool | Activate (true) or clear (false) emergency stop |
+| `systems.boatBowEcu.emergencyStop` | bool | Current emergency stop state |
+| `notifications.systems.boatBowEcu.emergencyStop` | notification | Standard Signal K `normal`/`emergency` notification |
+
+These are application-specific Signal K extensions. `propulsion.bowThruster` follows the standard `propulsion.<instance>` structure, but its `command` and `direction` leaves are custom.
 
 ## Usage Examples
 
 ### Monitor Current Chain Length
-Subscribe to `navigation.anchor.currentRode` in your SignalK dashboard for real-time chain length monitoring (updates every second).
+Subscribe to `navigation.anchor.rodeLength` in your SignalK dashboard for real-time rode length monitoring (updates every second).
 
 ### Automatic Windlass Control (Arm and Fire)
 
@@ -57,7 +60,7 @@ The recommended workflow is to **arm** the target first, then **fire** when read
   "context": "vessels.self",
   "updates": [{
     "values": [{
-      "path": "navigation.anchor.targetRodeCommand",
+      "path": "navigation.anchor.targetRodeLengthCommand",
       "value": 15.0
     }]
   }]
@@ -77,8 +80,8 @@ This sets the target to 15 meters but doesn't start the windlass. The target is 
   "context": "vessels.self",
   "updates": [{
     "values": [{
-      "path": "navigation.anchor.automaticModeCommand",
-      "value": 1.0
+      "path": "navigation.anchor.windlass.automaticModeCommand",
+      "value": true
     }]
   }]
 }
@@ -87,7 +90,7 @@ This sets the target to 15 meters but doesn't start the windlass. The target is 
 The windlass immediately starts moving toward the armed target. When the target is reached (±0.2m), the system automatically:
 - Stops the windlass
 - Disables automatic mode
-- Updates `automaticModeStatus` to 0.0
+- Updates `navigation.anchor.windlass.automaticMode` to `false`
 
 #### Emergency Stop
 ```json
@@ -95,8 +98,8 @@ The windlass immediately starts moving toward the armed target. When the target 
   "context": "vessels.self",
   "updates": [{
     "values": [{
-      "path": "navigation.anchor.automaticModeCommand",
-      "value": 0.0
+      "path": "navigation.anchor.windlass.automaticModeCommand",
+      "value": false
     }]
   }]
 }
@@ -113,27 +116,27 @@ Manual control can be performed via SignalK or a physical remote. Both methods o
 
 #### SignalK Manual Control
 
-SignalK manual control uses a single path with integer values.
+SignalK manual control uses a single path with string values.
 
 | Value | Action |
 |-------|--------|
-| `1` | Retrieve chain (UP) |
-| `0` | Stop windlass |
-| `-1` | Deploy chain (DOWN) |
+| `up` | Retrieve chain |
+| `stop` | Stop windlass |
+| `down` | Deploy chain |
 
 #### Retrieve Chain
 ```json
-{"path": "navigation.anchor.manualControl", "value": 1}
+{"path": "navigation.anchor.windlass.command", "value": "up"}
 ```
 
 #### Stop
 ```json
-{"path": "navigation.anchor.manualControl", "value": 0}
+{"path": "navigation.anchor.windlass.command", "value": "stop"}
 ```
 
 #### Deploy Chain
 ```json
-{"path": "navigation.anchor.manualControl", "value": -1}
+{"path": "navigation.anchor.windlass.command", "value": "down"}
 ```
 
 **Note:** SignalK manual commands are blocked when automatic mode is enabled.
@@ -162,23 +165,23 @@ The bow thruster can be controlled via SignalK commands with three states:
 
 | Command Value | Direction |
 |---------------|-----------|
-| `1` | Thruster to STARBOARD (right) |
-| `0` | Stop thruster |
-| `-1` | Thruster to PORT (left) |
+| `starboard` | Thruster to starboard (right) |
+| `stop` | Stop thruster |
+| `port` | Thruster to port (left) |
 
 #### Activate Starboard
 ```json
-{"path": "propulsion.bowThruster.command", "value": 1}
+{"path": "propulsion.bowThruster.command", "value": "starboard"}
 ```
 
 #### Stop
 ```json
-{"path": "propulsion.bowThruster.command", "value": 0}
+{"path": "propulsion.bowThruster.command", "value": "stop"}
 ```
 
 #### Activate Port
 ```json
-{"path": "propulsion.bowThruster.command", "value": -1}
+{"path": "propulsion.bowThruster.command", "value": "port"}
 ```
 
 ### Bow Thruster via Physical Remote Control
@@ -199,70 +202,70 @@ The system includes two dedicated remote buttons for simple thruster control:
 
 ### Read Current Chain Length
 ```bash
-curl http://signalk:3000/signalk/v1/api/vessels/self/navigation/anchor/currentRode
+curl http://signalk:3000/signalk/v1/api/vessels/self/navigation/anchor/rodeLength
 ```
 
 ### Arm and Fire (Automatic Deployment)
 ```bash
 # Arm target to 20m
-curl -X POST http://signalk:3000/signalk/v1/api/vessels/self \
+curl -X PUT http://signalk:3000/signalk/v1/api/vessels/self/navigation/anchor/targetRodeLengthCommand \
   -H "Content-Type: application/json" \
-  -d '{"updates":[{"values":[{"path":"navigation.anchor.targetRodeCommand","value":20.0}]}]}'
+  -d '{"value":20.0}'
 
 # Fire (enable automatic mode)
-curl -X POST http://signalk:3000/signalk/v1/api/vessels/self \
+curl -X PUT http://signalk:3000/signalk/v1/api/vessels/self/navigation/anchor/windlass/automaticModeCommand \
   -H "Content-Type: application/json" \
-  -d '{"updates":[{"values":[{"path":"navigation.anchor.automaticModeCommand","value":1.0}]}]}'
+  -d '{"value":true}'
 ```
 
 ### Manual Control
 ```bash
 # UP
-curl -X POST http://signalk:3000/signalk/v1/api/vessels/self \
+curl -X PUT http://signalk:3000/signalk/v1/api/vessels/self/navigation/anchor/windlass/command \
   -H "Content-Type: application/json" \
-  -d '{"updates":[{"values":[{"path":"navigation.anchor.manualControl","value":1}]}]}'
+  -d '{"value":"up"}'
 
 # STOP
-curl -X POST http://signalk:3000/signalk/v1/api/vessels/self \
+curl -X PUT http://signalk:3000/signalk/v1/api/vessels/self/navigation/anchor/windlass/command \
   -H "Content-Type: application/json" \
-  -d '{"updates":[{"values":[{"path":"navigation.anchor.manualControl","value":0}]}]}'
+  -d '{"value":"stop"}'
 
 # DOWN
-curl -X POST http://signalk:3000/signalk/v1/api/vessels/self \
+curl -X PUT http://signalk:3000/signalk/v1/api/vessels/self/navigation/anchor/windlass/command \
   -H "Content-Type: application/json" \
-  -d '{"updates":[{"values":[{"path":"navigation.anchor.manualControl","value":-1}]}]}'
+  -d '{"value":"down"}'
 ```
 
 ### Emergency Stop
 ```bash
-curl -X POST http://signalk:3000/signalk/v1/api/vessels/self \
+curl -X PUT http://signalk:3000/signalk/v1/api/vessels/self/navigation/anchor/windlass/automaticModeCommand \
   -H "Content-Type: application/json" \
-  -d '{"updates":[{"values":[{"path":"navigation.anchor.automaticModeCommand","value":0.0}]}]}'
+  -d '{"value":false}'
 ```
 
 ### Bow Thruster Control via REST API
 ```bash
 # Activate thruster to starboard
-curl -X POST http://signalk:3000/signalk/v1/api/vessels/self \
+curl -X PUT http://signalk:3000/signalk/v1/api/vessels/self/propulsion/bowThruster/command \
   -H "Content-Type: application/json" \
-  -d '{"updates":[{"values":[{"path":"propulsion.bowThruster.command","value":1}]}]}'
+  -d '{"value":"starboard"}'
 
 # Stop thruster
-curl -X POST http://signalk:3000/signalk/v1/api/vessels/self \
+curl -X PUT http://signalk:3000/signalk/v1/api/vessels/self/propulsion/bowThruster/command \
   -H "Content-Type: application/json" \
-  -d '{"updates":[{"values":[{"path":"propulsion.bowThruster.command","value":0}]}]}'
+  -d '{"value":"stop"}'
 
 # Activate thruster to port
-curl -X POST http://signalk:3000/signalk/v1/api/vessels/self \
+curl -X PUT http://signalk:3000/signalk/v1/api/vessels/self/propulsion/bowThruster/command \
   -H "Content-Type: application/json" \
-  -d '{"updates":[{"values":[{"path":"propulsion.bowThruster.command","value":-1}]}]}'
+  -d '{"value":"port"}'
 ```
 
 ### Emergency Stop (All Systems)
 ```bash
-curl -X POST http://signalk:3000/signalk/v1/api/vessels/self \
+curl -X PUT http://signalk:3000/signalk/v1/api/vessels/self/systems/boatBowEcu/emergencyStopCommand \
   -H "Content-Type: application/json" \
-  -d '{"updates":[{"values":[{"path":"navigation.bow.ecu.emergencyStopCommand","value":true}]}]}'
+  -d '{"value":true}'
 ```
 
 Activating emergency stop immediately halts both anchor windlass and bow thruster.
@@ -277,23 +280,23 @@ Preset Target Buttons (recommended for arm and fire operation):
 ```
 [Button: 5m]  [Button: 10m]  [Button: 15m]  [Button: 20m]
 ```
-Each button sends to `navigation.anchor.targetRodeCommand` with respective value.
+Each button sends to `navigation.anchor.targetRodeLengthCommand` with its respective value.
 
 Auto Mode Switch:
 ```
-[Toggle: AUTO MODE]  ← Sends 1.0 (on) or 0.0 (off) to navigation.anchor.automaticModeCommand
+[Toggle: AUTO MODE]  ← Sends true or false to navigation.anchor.windlass.automaticModeCommand
 ```
 
 Manual Control Buttons (only when auto mode off):
 ```
 [UP]  [STOP]  [DOWN]
 ```
-Button group sending 1, 0, -1 to `navigation.anchor.manualControl`
+Button group sending `up`, `stop`, or `down` to `navigation.anchor.windlass.command`
 
 Status Display:
-- Gauge showing `navigation.anchor.currentRode`
-- Text showing `navigation.anchor.automaticModeStatus`
-- Text showing `navigation.anchor.targetRodeStatus`
+- Gauge showing `navigation.anchor.rodeLength`
+- Text showing `navigation.anchor.windlass.automaticMode`
+- Text showing `navigation.anchor.targetRodeLength`
 
 **Bow Thruster Control**
 
@@ -301,20 +304,20 @@ Direction Buttons:
 ```
 [PORT]  [STOP]  [STARBOARD]
 ```
-Buttons sending -1, 0, 1 to `propulsion.bowThruster.command`
+Buttons sending `port`, `stop`, or `starboard` to `propulsion.bowThruster.command`
 
 Status Display:
-- Text showing `propulsion.bowThruster.status` (active direction)
+- Text showing `propulsion.bowThruster.direction`
 
 **Emergency Stop**
 
 Red Emergency Stop Button:
 ```
-[EMERGENCY STOP]  ← Sends true to navigation.bow.ecu.emergencyStopCommand
+[EMERGENCY STOP]  ← Sends true to systems.boatBowEcu.emergencyStopCommand
 ```
 
 Status Indicator:
-- Red warning showing `navigation.bow.ecu.emergencyStopStatus`
+- Red warning showing `systems.boatBowEcu.emergencyStop`
 
 ### Using signalk-send-pathvalue Node
 
@@ -323,7 +326,7 @@ The `signalk-send-pathvalue` node (from @signalk/node-red-embedded-signalk) work
 ```javascript
 // Example: Preset target button for anchor
 msg.payload = {
-    "path": "navigation.anchor.targetRodeCommand",
+    "path": "navigation.anchor.targetRodeLengthCommand",
     "value": 15.0
 };
 return msg;
@@ -331,7 +334,7 @@ return msg;
 // Example: Bow thruster command
 msg.payload = {
     "path": "propulsion.bowThruster.command",
-    "value": 1  // 1=STARBOARD, 0=STOP, -1=PORT
+    "value": "starboard"
 };
 return msg;
 ```
@@ -351,7 +354,7 @@ Connect to `signalk-send-pathvalue` node configured for PUT requests.
 **Function: Set Target**
 ```javascript
 msg.payload = {
-    "path": "navigation.anchor.targetRodeCommand",
+    "path": "navigation.anchor.targetRodeLengthCommand",
     "value": parseFloat(msg.payload)
 };
 return msg;
@@ -360,8 +363,8 @@ return msg;
 **Function: Auto Mode**
 ```javascript
 msg.payload = {
-    "path": "navigation.anchor.automaticModeCommand",
-    "value": msg.payload ? 1.0 : 0.0
+    "path": "navigation.anchor.windlass.automaticModeCommand",
+    "value": Boolean(msg.payload)
 };
 return msg;
 ```
@@ -376,7 +379,7 @@ return msg;
 
 **Function: Thruster Cmd**
 ```javascript
-// msg.payload should be -1, 0, or 1
+// msg.payload should be "port", "stop", or "starboard"
 msg.payload = {
     "path": "propulsion.bowThruster.command",
     "value": msg.payload
@@ -428,7 +431,7 @@ pio run --target upload --upload-port bow-ecu.local
 2. **Arm and fire operation** - Set target first, enable auto mode when ready; prevents accidental deployment
 3. **Auto-disable on completion** - Automatic mode turns off when target reached; returns to manual mode
 4. **Home position protection** - Cannot retrieve past home position; auto-stops and resets counter
-5. **Emergency stop** - Send `automaticModeCommand: 0.0` to immediately stop and disable auto mode
+5. **Emergency stop** - Send `emergencyStopCommand: true` to immediately stop both systems
 6. **Manual control lockout** - Manual commands blocked when automatic mode active
 7. **Status feedback** - All mode changes reflected in status paths for monitoring
 8. **Stopping tolerance** - Stops within ±0.2m of target (configurable via meters-per-pulse setting)
@@ -439,15 +442,15 @@ pio run --target upload --upload-port bow-ecu.local
 |---------|-------|----------|
 | Counter not incrementing | Pulse sensor (GPIO 25) | Verify sensor connection and signal |
 | Wrong count direction | Direction sensor (GPIO 26) | HIGH = out, LOW = in; swap if reversed |
-| Windlass won't start (auto) | Automatic mode status | Send `automaticModeCommand: 1.0` to enable |
-| | Target armed | Send `targetRodeCommand` with valid target |
+| Windlass won't start (auto) | Automatic mode status | Send `windlass.automaticModeCommand: true` to enable |
+| | Target armed | Send `targetRodeLengthCommand` with valid target |
 | | Current position | If already at target, no movement occurs |
 | Windlass won't retrieve | Home sensor (GPIO 33) | May already be home; check sensor state |
 | | Sensor wiring | Should be LOW at home, HIGH otherwise |
 | Auto mode won't enable | Manual control active | Ensure no manual commands pending |
 | Counter won't reset | Home sensor | Verify LOW signal when anchor home |
 | | Manual reset | Send `resetRode: true` |
-| Emergency: Can't stop | Auto mode disable | Send `automaticModeCommand: 0.0` |
+| Emergency: Can't stop | Emergency stop | Send `systems.boatBowEcu.emergencyStopCommand: true` |
 | | Physical switches | Use hardwired manual controls |
 
 ### Debug Output

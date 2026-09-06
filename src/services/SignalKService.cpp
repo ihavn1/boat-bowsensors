@@ -32,7 +32,7 @@ void SignalKService::initialize() {
 
 void SignalKService::setupRodeLengthOutput() {
     // Create the rode length output and set up periodic updates from state manager
-    rode_output_ = new SKOutputFloat("navigation.anchor.currentRode", "/rode_length_sensor/sk_path");
+    rode_output_ = new SKOutputFloat("navigation.anchor.rodeLength", "/rode_length_sensor/sk_path");
     rode_output_->set_metadata(new SKMetadata("m"));  // Set units to meters
     rode_output_->set_input(0.0f);  // Initialize to 0
     
@@ -59,23 +59,25 @@ void SignalKService::setupRodeLengthOutput() {
 }
 
 void SignalKService::setupEmergencyStopBindings() {
-    auto* emergency_cmd_listener = new BoolSKListener("navigation.bow.ecu.emergencyStopCommand");
+    auto* emergency_cmd_listener = new BoolSKListener("systems.boatBowEcu.emergencyStopCommand");
     
     // Create ObservableValue for status with automatic SignalK emission
     emergency_stop_status_value_ = new ObservableValue<bool>();
     emergency_stop_status_value_->connect_to(new SKOutputBool(
-        "navigation.bow.ecu.emergencyStopStatus",
+        "systems.boatBowEcu.emergencyStop",
         "/emergency_stop_status/sk_path"
     ));
-    emergency_stop_status_value_->set(false);
-    emergency_stop_status_value_->notify();  // Initialize and emit first value
+    emergency_stop_notification_output_ = new SKOutputRawJson(
+        "notifications.systems.boatBowEcu.emergencyStop",
+        "/emergency_stop_notification/sk_path"
+    );
+    updateEmergencyStopOutputs(false);
     
     emergency_cmd_listener->connect_to(new LambdaTransform<bool, bool>([this](bool emergency_active) {
         if (!state_manager_.areCommandsAllowed() && !state_manager_.isEmergencyStopActive()) {
             // During startup, force status to false
             if (emergency_stop_status_value_) {
-                emergency_stop_status_value_->set(false);
-                emergency_stop_status_value_->notify();
+                updateEmergencyStopOutputs(false);
             }
             return emergency_active;
         }
@@ -87,8 +89,7 @@ void SignalKService::setupEmergencyStopBindings() {
             // Update status value to reflect actual state and emit to SignalK
             if (emergency_stop_status_value_) {
                 bool actual_state = emergency_stop_service_->isActive();
-                emergency_stop_status_value_->set(actual_state);
-                emergency_stop_status_value_->notify();
+                updateEmergencyStopOutputs(actual_state);
                 debugD("Emergency stop status updated: %s", actual_state ? "ACTIVE" : "CLEARED");
             }
         }
@@ -96,44 +97,58 @@ void SignalKService::setupEmergencyStopBindings() {
     }))->connect_to(emergency_stop_status_value_);
 }
 
+void SignalKService::updateEmergencyStopOutputs(bool active) {
+    emergency_stop_status_value_->set(active);
+    emergency_stop_status_value_->notify();
+
+    if (emergency_stop_notification_output_) {
+        emergency_stop_notification_output_->set_input(active
+            ? String(R"({"state":"emergency","method":["visual","sound"],"message":"Boat bow ECU emergency stop active"})")
+            : String(R"({"state":"normal","method":[],"message":"Boat bow ECU emergency stop cleared"})"));
+    }
+}
+
 void SignalKService::setupManualControlBindings() {
-    // Manual Windlass Control: Single path with three states (1=UP, 0=STOP, -1=DOWN)
+    // Manual Windlass Control: Single path with up, down, and stop commands
     // Manual control overrides automatic mode
-    manual_control_output_ = new SKOutputInt("navigation.anchor.manualControlStatus", "/manual_control_status/sk_path");
-    manual_control_output_->set_input(0);  // Initialize to STOP on boot
-    auto* manual_control_listener = new IntSKListener("navigation.anchor.manualControl");
+    manual_control_output_ = new SKOutputString("navigation.anchor.windlass.state", "/manual_control_status/sk_path");
+    manual_control_output_->set_input(String("stopped"));
+    auto* manual_control_listener = new StringSKListener("navigation.anchor.windlass.command");
     
-    manual_control_listener->connect_to(new LambdaTransform<int, int>([this](int command) {
-        if (state_manager_.isEmergencyStopActive()) return 0;
-        if (!state_manager_.areCommandsAllowed()) return 0;  // Block until connection stable
+    manual_control_listener->connect_to(new LambdaTransform<String, String>([this](String command) {
+        if (state_manager_.isEmergencyStopActive()) return String("stopped");
+        if (!state_manager_.areCommandsAllowed()) return String("stopped");
         // Manual control always overrides automatic mode
         if (auto_mode_controller_) {
             auto_mode_controller_->setEnabled(false);
             state_manager_.setAutoModeEnabled(false);
             if (auto_mode_output_) {
-                auto_mode_output_->set_input(0.0f);
+                auto_mode_output_->set_input(false);
             }
         }
         
-        if (command == 1) {
+        if (command == "up") {
             winch_controller_.moveUp();
-        } else if (command == -1) {
+            debugD("Manual control: UP");
+            return String("up");
+        } else if (command == "down") {
             winch_controller_.moveDown();
+            debugD("Manual control: DOWN");
+            return String("down");
         } else {
             winch_controller_.stop();
+            debugD("Manual control: STOP");
+            return String("stopped");
         }
-        debugD("Manual control: %s", command == 1 ? "UP" : (command == -1 ? "DOWN" : "STOP"));
-        return command;
     }))->connect_to(manual_control_output_);
 }
 
 void SignalKService::setupAutoModeBindings() {
     // Automatic Mode Control: Enable/disable automatic windlass control
-    // Using FloatSKListener (value > 0.5 = enable, <= 0.5 = disable)
-    auto_mode_output_ = new SKOutputFloat("navigation.anchor.automaticModeStatus", "/automatic_mode_status/sk_path");
+    auto_mode_output_ = new SKOutputBool("navigation.anchor.windlass.automaticMode", "/automatic_mode_status/sk_path");
     
     // Target Rode Length: Arm target for automatic mode
-    target_output_ = new SKOutputFloat("navigation.anchor.targetRodeStatus", "/target_rode_status/sk_path");
+    target_output_ = new SKOutputFloat("navigation.anchor.targetRodeLength", "/target_rode_status/sk_path");
     target_output_->set_metadata(new SKMetadata("m"));  // Set units to meters
     
     // Ensure auto mode starts disabled on boot and target is cleared
@@ -141,17 +156,16 @@ void SignalKService::setupAutoModeBindings() {
         auto_mode_controller_->setEnabled(false);
         state_manager_.setAutoModeEnabled(false);
     }
-    auto_mode_output_->set_input(0.0f);
+    auto_mode_output_->set_input(false);
     target_output_->set_input(-1.0f);
     
-    auto* auto_mode_listener = new FloatSKListener("navigation.anchor.automaticModeCommand");
+    auto* auto_mode_listener = new BoolSKListener("navigation.anchor.windlass.automaticModeCommand");
     
-    auto_mode_listener->connect_to(new LambdaTransform<float, float>([this](float value) {
-        if (state_manager_.isEmergencyStopActive()) return 0.0f;
-        if (!state_manager_.areCommandsAllowed()) return 0.0f;  // Block until connection stable
-        bool enable = (value > 0.5);
+    auto_mode_listener->connect_to(new LambdaTransform<bool, bool>([this](bool enable) {
+        if (state_manager_.isEmergencyStopActive()) return false;
+        if (!state_manager_.areCommandsAllowed()) return false;
         
-        if (!auto_mode_controller_) return value;
+        if (!auto_mode_controller_) return enable;
         
         if (enable != auto_mode_controller_->isEnabled()) {
             if (enable) {
@@ -170,10 +184,10 @@ void SignalKService::setupAutoModeBindings() {
                 state_manager_.setAutoModeEnabled(false);
             }
         }
-        return value;
+        return enable;
     }))->connect_to(auto_mode_output_);
 
-    auto* target_listener = new FloatSKListener("navigation.anchor.targetRodeCommand");
+    auto* target_listener = new FloatSKListener("navigation.anchor.targetRodeLengthCommand");
     
     target_listener->connect_to(new LambdaTransform<float, float>([this](float target) {
         if (state_manager_.isEmergencyStopActive()) return -1.0f;
@@ -193,7 +207,7 @@ void SignalKService::setupAutoModeBindings() {
             if (auto_mode_controller_->isEnabled()) {
                 auto_mode_controller_->setEnabled(false);
                 state_manager_.setAutoModeEnabled(false);
-                auto_mode_output_->set_input(0.0f);
+                auto_mode_output_->set_input(false);
                 debugD("Auto mode disabled - target armed requires re-enable");
             }
         }
@@ -229,7 +243,7 @@ void SignalKService::setupHomeCommandBindings() {
                 if (auto_mode_controller_->isEnabled()) {
                     auto_mode_controller_->setEnabled(false);
                     state_manager_.setAutoModeEnabled(false);
-                    auto_mode_output_->set_input(0.0f);
+                    auto_mode_output_->set_input(false);
                     debugD("Auto mode disabled - home armed requires re-enable");
                 }
             }
@@ -281,8 +295,7 @@ void SignalKService::startConnectionMonitoring() {
             bool actual_state = emergency_stop_service_->isActive();
             bool current_value = emergency_stop_status_value_->get();
             if (actual_state != current_value) {
-                emergency_stop_status_value_->set(actual_state);
-                emergency_stop_status_value_->notify();
+                updateEmergencyStopOutputs(actual_state);
                 debugD("Emergency stop status synced: %s", actual_state ? "ACTIVE" : "CLEARED");
             }
         }
@@ -295,38 +308,40 @@ void SignalKService::setupBowPropellerBindings() {
         return;
     }
     
-    // Bow Propeller Command: Three states (-1=PORT, 0=STOP, 1=STARBOARD)
-    bow_propeller_command_output_ = new SKOutputInt("propulsion.bowThruster.command", "/bow_propeller_command/sk_path");
-    bow_propeller_command_output_->set_input(0);  // Initialize to STOP on boot
+    // Bow Propeller Command: port, starboard, or stop
+    bow_propeller_command_output_ = new SKOutputString("propulsion.bowThruster.command", "/bow_propeller_command/sk_path");
+    bow_propeller_command_output_->set_input(String("stop"));
     
-    bow_propeller_status_output_ = new SKOutputInt("propulsion.bowThruster.status", "/bow_propeller_status/sk_path");
-    bow_propeller_status_output_->set_input(0);  // Initialize to STOP on boot
+    bow_propeller_status_output_ = new SKOutputString("propulsion.bowThruster.direction", "/bow_propeller_status/sk_path");
+    bow_propeller_status_output_->set_input(String("stopped"));
     
-    auto* bow_command_listener = new IntSKListener("propulsion.bowThruster.command");
+    auto* bow_command_listener = new StringSKListener("propulsion.bowThruster.command");
     
-    bow_command_listener->connect_to(new LambdaTransform<int, int>([this](int command) {
-        if (state_manager_.isEmergencyStopActive()) return 0;
-        if (!state_manager_.areCommandsAllowed()) return 0;  // Block until connection stable
+    bow_command_listener->connect_to(new LambdaTransform<String, String>([this](String command) {
+        if (state_manager_.isEmergencyStopActive()) return String("stop");
+        if (!state_manager_.areCommandsAllowed()) return String("stop");
         
-        if (command == 1) {
+        if (command == "starboard") {
             bow_propeller_controller_->turnStarboard();
             if (bow_propeller_status_output_) {
-                bow_propeller_status_output_->set_input(1);
+                bow_propeller_status_output_->set_input(String("starboard"));
             }
             debugD("Bow propeller command: STARBOARD");
-        } else if (command == -1) {
+            return String("starboard");
+        } else if (command == "port") {
             bow_propeller_controller_->turnPort();
             if (bow_propeller_status_output_) {
-                bow_propeller_status_output_->set_input(-1);
+                bow_propeller_status_output_->set_input(String("port"));
             }
             debugD("Bow propeller command: PORT");
+            return String("port");
         } else {
             bow_propeller_controller_->stop();
             if (bow_propeller_status_output_) {
-                bow_propeller_status_output_->set_input(0);
+                bow_propeller_status_output_->set_input(String("stopped"));
             }
             debugD("Bow propeller command: STOP");
+            return String("stop");
         }
-        return command;
     }))->connect_to(bow_propeller_command_output_);
 }
